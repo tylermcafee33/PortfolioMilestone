@@ -1,0 +1,504 @@
+---
+title: "Final_Project"
+author: "Teresa Cameron, John Light Jr, and Tyler McAfee"
+date: "9/15/2019"
+output: html_document
+---
+
+install.packages("readxl")
+install.packages("dplyr")
+install.packages("reshape2")
+install.packages("ggplot2")
+install.packages("maps")
+
+```{r}
+library(readxl)
+states_all <- read_excel("states_all.xlsx")
+```
+
+
+```{r}
+# Convert excel to data frame
+States <- data.frame(states_all)
+# Remove first column Primary_Key
+States <- States[,-1]
+# Filter data for years with complete information
+library(dplyr)
+States <- filter(States, YEAR %in% c("2003", "2005", "2007", "2009", "2011", "2013", "2015"))
+# Remove territories that do not have data
+States <- States[-359:-409,]
+# Remove District of Columbia
+States <- States[States$STATE != "DISTRICT_OF_COLUMBIA",]
+# Fix column names
+NamesOfColumns <- c("State_Name", "Year", "Total_Enrollment", "Total_Revenue", "Federal_Revenue", "State_Revenue", "Local_Revenue",
+                    "Total_Expenditure", "Instruction_Expenditure", "Support_Service_Expenditure", "Other_Expenditure",
+                    "Capital_Outlay_Expenditure", "PK_Enrollment", "KG_Enrollment", "4th_Grade_Enrollment", "8th_Grade_Enrollment",
+                    "12th_Grade_Enrollment", "1st_through_8th_Enrollment", "9th_through_12th_Enrollment", "1st_through_12th_Enrollment",
+                    "Average_4th_Grade_Math_Score", "Average_8th_Grade_Math_Score", "Average_4th_Grade_Reading_Score", 
+                    "Average_8th_Grade_Reading_Score")
+States <- setNames(States, NamesOfColumns)
+# Lowercase state names
+States$State_Name <- tolower(States$State_Name)
+# Remove "_" and replace with space in State Name column
+States$State_Name <- gsub("_", " ", States$State_Name)
+# Add total expenses per student coloumn
+States$Expenditure_Per_Student <- States$Total_Expenditure / States$Total_Enrollment
+# Add total local revenue per student column
+States$Local_Revenue_Per_Student <- States$Local_Revenue / States$Total_Enrollment
+# Add total state revenue per student column
+States$State_Revenue_Per_Student <- States$State_Revenue / States$Total_Enrollment
+# Add total Instruction Expenses per student column
+States$Instruction_Expenditure_Per_Student <- States$Instruction_Expenditure / States$Total_Enrollment
+# Add total Support Services Expenditure per student coloumn
+States$Support_Service_Expenditure_Per_Student <- States$Support_Service_Expenditure / States$Total_Enrollment
+# Add total Capital Expenses per student column
+States$Capital_Outlay_Expenditure_Per_Student <- States$Capital_Outlay_Expenditure / States$Total_Enrollment
+# Add total 4th Grade test results
+States$Total_4th_Grade_Score <- States$Average_4th_Grade_Math_Score + States$Average_4th_Grade_Reading_Score
+# Add total 8th Grade test results
+States$Total_8th_Grade_Score <- States$Average_8th_Grade_Math_Score + States$Average_8th_Grade_Reading_Score
+```
+Descriptive Statistics
+```{r}
+summary(States)
+```
+Plot some descriptive statistic information
+
+```{r}
+# Create data frame of revenue source by state
+revenue_distribution <- States %>%
+  group_by(State_Name) %>%
+  summarise(avg_federal_revenue = mean(Federal_Revenue))
+revenue_distribution <- data.frame(revenue_distribution)
+revenue_distribution$avg_federal_revenue <- round(revenue_distribution$avg_federal_revenue)
+```  
+  
+```{r}
+# Add State Revenue
+revenue_distribution1 <- States %>%
+  group_by(State_Name) %>%
+  summarise(avg_state_revenue = mean(State_Revenue))
+revenue_distribution1 <- data.frame(revenue_distribution1)
+revenue_distribution1$avg_state_revenue <- round(revenue_distribution1$avg_state_revenue)
+revenue_distribution <- inner_join(revenue_distribution, revenue_distribution1, by = "State_Name")
+```    
+  
+```{r}
+# Add Local Revenue
+revenue_distribution2 <- States %>%
+  group_by(State_Name) %>%
+  summarise(avg_local_revenue = mean(Local_Revenue))
+revenue_distribution2 <- data.frame(revenue_distribution2)
+revenue_distribution2$avg_local_revenue <- round(revenue_distribution2$avg_local_revenue)
+revenue_distribution <- inner_join(revenue_distribution, revenue_distribution2, by = "State_Name")
+```
+  
+```{r}
+# Add total Revenue Column
+revenue_distribution$Total_Revenue <- revenue_distribution$avg_federal_revenue + revenue_distribution$avg_state_revenue +
+                                      revenue_distribution$avg_local_revenue
+```
+
+```{r}
+# Find Federal, State, and Local Percent Revenue
+revenue_distribution$Percent_Federal <- revenue_distribution$avg_federal_revenue / revenue_distribution$Total_Revenue * 100
+revenue_distribution$Percent_State <- revenue_distribution$avg_state_revenue / revenue_distribution$Total_Revenue * 100
+revenue_distribution$Percent_Local <- revenue_distribution$avg_local_revenue / revenue_distribution$Total_Revenue * 100
+```
+
+```{r}
+library(reshape2)
+rd_long <- subset(revenue_distribution, select = c(State_Name, Percent_Federal, Percent_State, Percent_Local))
+rd_long <- melt(rd_long, variable.name = "Revenue_Type",
+                                  value.name = "Percent")
+```
+
+  
+```{r}
+library(ggplot2)
+rdgraph <- ggplot() + geom_bar(aes(y=Percent, x = State_Name, fill = Revenue_Type), data = rd_long, stat="identity")
+rdgraph <- rdgraph + theme(axis.text.x = element_text(angle = 90, hjust = 1)) + ggtitle("Percent Revenue Distribution by State")
+rdgraph
+```
+
+```{r}
+# Descriptive statistics on revenue distribution
+quantile(revenue_distribution$Percent_Federal)
+quantile(revenue_distribution$Percent_State)
+quantile(revenue_distribution$Percent_Local)
+```
+
+  
+```{r}
+# Create data frame of Average Expenditure Per Student per State
+ g <- States %>%
+  group_by(State_Name) %>%
+  summarise(avg_exp_per_student = mean(Expenditure_Per_Student))
+ g <- data.frame(g)
+ g$avg_exp_per_student <- round(g$avg_exp_per_student, digits = 2)
+``` 
+install.packages("evaluate")
+install.packages("mapproj")
+```{r}
+# Create map of Average Expenditure Per Student
+us <- map_data("state")
+Exp_Per_Student_Map <- ggplot(g, aes(map_id = State_Name))
+Exp_Per_Student_Map <- Exp_Per_Student_Map + geom_map(map = us,
+        aes(fill=avg_exp_per_student))
+Exp_Per_Student_Map <- Exp_Per_Student_Map + expand_limits(x = us$long, y = us$lat)
+Exp_Per_Student_Map <- Exp_Per_Student_Map + coord_map() + ggtitle("Average Expenditure per Student by State")
+Exp_Per_Student_Map
+```
+
+```{r}
+# Discriptive statistics on Average Expenditure per Student
+quantile(g$avg_exp_per_student)
+```
+
+```{r}
+# Add Average 4th Grades Test Score by State to g
+h <- States %>%
+  group_by(State_Name) %>%
+  summarise(avg_4th_Test_Score = round(mean(Total_4th_Grade_Score)))
+ h <- data.frame(h)
+g <- inner_join(g, h, by = "State_Name")
+```
+
+
+```{r}
+# Add Average 8th Grades Test Score by State to g
+i <- States %>%
+  group_by(State_Name) %>%
+  summarise(avg_8th_Test_Score = round(mean(Total_8th_Grade_Score)))
+ i <- data.frame(i)
+g <- inner_join(g, i, by = "State_Name")
+```
+
+```{r}
+# Create plot showing 4th Grade test scores by state and expenditures per student by region
+# Add region coloumn
+g$Region <- state.region 
+j <- ggplot(g, aes(x=avg_exp_per_student, y= avg_4th_Test_Score))
+j <- j + geom_point(aes(color=Region), size=3)
+j <- j + geom_text(aes(label=State_Name), size=3, vjust=-.75, hjust=.75)
+j
+```
+
+```{r}
+# Create plot showing 8th Grade test scores by state and expenditures per student by region
+k <- ggplot(g, aes(x=avg_exp_per_student, y= avg_8th_Test_Score))
+k <- k + geom_point(aes(color=Region), size=3)
+k <- k + geom_text(aes(label=State_Name), size=3, vjust=-.75, hjust=.75)
+k
+```
+
+```{r}
+ggplot(g, aes(x=Region,avg_4th_Test_Score)) + geom_boxplot()
+```
+
+```{r}
+ggplot(g, aes(x=Region,avg_8th_Test_Score)) + geom_boxplot()
+```
+
+```{r}
+# Add Instruction Expenditure per student to g
+m <- States %>%
+  group_by(State_Name) %>%
+  summarise(avg_Instruction_Expenditure_Per_Student = round(mean(Instruction_Expenditure_Per_Student), digits =2))
+m <- data.frame(m)
+g <- inner_join(g, m, by = "State_Name")
+```
+
+```{r}
+# Add Support Expenditure per student to g
+n <- States %>%
+  group_by(State_Name) %>%
+  summarise(avg_Support_Service_Expenditure_Per_Student = round(mean(Support_Service_Expenditure_Per_Student), digits =2))
+n <- data.frame(n)
+g <- inner_join(g, n, by = "State_Name")
+```
+
+```{r}
+g <- inner_join(g, revenue_distribution, by = "State_Name")
+```
+
+```{r}
+# Seperate data by Region
+NERegionDF <- g %>%
+  filter(Region == "Northeast")
+SRegionDF <- g %>%
+  filter(Region == "South")
+WRegionDF <- g %>%
+  filter(Region == "West")
+NCRegionDF <- g %>%
+  filter(Region == "North Central")
+```
+
+
+```{r}
+# Scatterplots to see if relationship
+o <- ggplot(g, aes(x=avg_exp_per_student, y=avg_4th_Test_Score)) + geom_point() + stat_smooth(method = "lm", col = "red")
+o
+```
+
+```{r}
+p <- ggplot(g, aes(x=avg_Instruction_Expenditure_Per_Student, y=avg_4th_Test_Score)) + geom_point() + stat_smooth(method = "lm", col = "red")
+p
+```
+
+```{r}
+q <- ggplot(g, aes(x=avg_Support_Service_Expenditure_Per_Student, y=avg_4th_Test_Score)) + geom_point() + stat_smooth(method = "lm", col = "red")
+q
+```
+
+```{r}
+r <- ggplot(g, aes(x=Percent_Local, y=avg_4th_Test_Score)) + geom_point() + stat_smooth(method = "lm", col = "red")
+r
+```
+
+```{r}
+s <- ggplot(g, aes(x=Percent_State, y=avg_4th_Test_Score)) + geom_point() + stat_smooth(method = "lm", col = "red")
+s
+```
+
+
+```{r}
+t <- ggplot(g, aes(x=avg_exp_per_student, y=avg_8th_Test_Score)) + geom_point() + stat_smooth(method = "lm", col = "red")
+t
+```
+
+```{r}
+v <- ggplot(g, aes(x=avg_Instruction_Expenditure_Per_Student, y=avg_8th_Test_Score)) + geom_point() + stat_smooth(method = "lm", col = "red")
+v
+```
+
+```{r}
+w <- ggplot(g, aes(x=avg_Support_Service_Expenditure_Per_Student, y=avg_8th_Test_Score)) + geom_point() + stat_smooth(method = "lm", col = "red")
+w
+```
+
+```{r}
+x <- ggplot(g, aes(x=Percent_Local, y=avg_8th_Test_Score)) + geom_point() + stat_smooth(method = "lm", col = "red")
+x
+```
+
+```{r}
+y <- ggplot(g, aes(x=Percent_State, y=avg_8th_Test_Score)) + geom_point() + stat_smooth(method = "lm", col = "red")
+y
+```
+
+```{r}
+# Linear models
+model1 <- lm(formula = avg_4th_Test_Score ~ avg_exp_per_student + Percent_Local + Percent_State + Region, data = g)
+summary(model1)
+```
+
+```{r}
+model2 <- lm(formula = avg_4th_Test_Score ~ Percent_Local + Percent_State + Region, data = g)
+summary(model2)
+```
+
+```{r}
+model3 <- lm(formula = avg_8th_Test_Score ~ avg_exp_per_student + Percent_Local + Percent_State + Region, data = g)
+summary(model3)
+```
+
+```{r}
+model4 <- lm(formula = avg_8th_Test_Score ~ avg_exp_per_student + Percent_Local + Percent_State, data = NERegionDF)
+summary(model4)
+```
+
+```{r}
+model5 <- lm(formula = avg_4th_Test_Score ~ avg_exp_per_student + Percent_Local + Percent_State, data = NERegionDF)
+summary(model5)
+```
+
+```{r}
+model6 <- lm(formula = avg_8th_Test_Score ~ avg_exp_per_student + Percent_Local + Percent_State, data = NCRegionDF)
+summary(model6)
+```
+
+```{r}
+model7 <- lm(formula = avg_4th_Test_Score ~ avg_exp_per_student + Percent_Local + Percent_State, data = NCRegionDF)
+summary(model7)
+```
+
+```{r}
+model8 <- lm(formula = avg_8th_Test_Score ~ avg_exp_per_student + Percent_Local + Percent_State, data = SRegionDF)
+summary(model8)
+```
+
+```{r}
+model9 <- lm(formula = avg_4th_Test_Score ~ avg_exp_per_student + Percent_Local + Percent_State, data = SRegionDF)
+summary(model9)
+```
+
+```{r}
+model10 <- lm(formula = avg_4th_Test_Score ~ Percent_Local + Percent_State, data = SRegionDF)
+summary(model10)
+```
+
+```{r}
+model11 <- lm(formula = avg_8th_Test_Score ~ avg_exp_per_student + Percent_Local + Percent_State, data = WRegionDF)
+summary(model11)
+```
+
+```{r}
+model12 <- lm(formula = avg_4th_Test_Score ~ avg_exp_per_student + Percent_Local + Percent_State, data = WRegionDF)
+summary(model12)
+```
+
+```{r}
+# Create categorial variable of above average test scores for 4th grade
+tm4 <- mean(g$avg_4th_Test_Score)
+g$good_scores_4 <- cut(g$avg_4th_Test_Score, breaks = c(-Inf, tm4, Inf),
+                                                    labels = c("0", "1"))
+```
+
+```{r}
+# Create categorical variable of above average test scores for 8th grade
+tm8 <- mean(g$avg_8th_Test_Score)
+g$good_scores_8 <- cut(g$avg_8th_Test_Score, breaks = c(-Inf, tm8, Inf),
+                                                    labels = c("0", "1"))
+```
+
+```{r}
+# Create train and test data sets
+set.seed(1)
+nrows <- nrow(g) # number of rows in the data
+sample_size <- round(0.6*nrows) # take 60%
+
+training_index <- sample(1:nrows, size = sample_size, replace = FALSE) # random index
+
+ts_train <- g[training_index, ] # train data set
+ts_test <- g[-training_index, ] # test data set
+```
+
+install.packages("kernlab")
+```{r}
+# Train model with the kernlab package
+set.seed(1)
+library(kernlab)
+model <- ksvm(good_scores_4 ~ avg_Instruction_Expenditure_Per_Student + avg_Support_Service_Expenditure_Per_Student + Percent_State + Percent_Local + Region, data = ts_train,
+                    kernel = "rbfdot",
+                    kpar = "automatic",
+                    prob.model = TRUE)
+
+model
+```
+
+```{r}
+# Table of prediction model
+pred <- predict(model, ts_test)
+table(pred, ts_test$good_scores_4)
+```
+
+0 - under mean 1 - over mean
+2 less than average cases predicted incorrectly
+5 above average cases predicted incorrectly
+10 less than average cases predicted correctly
+3 above average cases predicted correctly
+
+2 + 5 = 7 error cases
+7 / 20 = 0.35 total error rate %
+Accuracy rate: 65%
+
+```{r}
+# Create column in ts_test for accuracy
+ts_test$Predicted <- pred
+Accuracy <- c()
+Accuracy <- ifelse(ts_test$good_scores_4 == ts_test$Predicted, 0, 1)
+ts_test$Accuracy <- Accuracy
+```
+
+```{r}
+# Create scatter plot with results of model
+g1 <- ggplot(ts_test, aes(x = avg_exp_per_student, y = avg_4th_Test_Score))
+g1 <- g1 + geom_point(aes(size = Accuracy, color = good_scores_4, shape = pred))
+g1
+```
+
+```{r}
+# Train model with the kernlab package
+set.seed(2)
+model1 <- ksvm(good_scores_8 ~ avg_exp_per_student + avg_Instruction_Expenditure_Per_Student + avg_Support_Service_Expenditure_Per_Student + Percent_State + Percent_Local, data = ts_train,
+                    kernel = "rbfdot",
+                    kpar = "automatic",
+                    prob.model = TRUE)
+
+model1
+```
+
+```{r}
+set.seed(2)
+pred1 <- predict(model1, ts_test)
+table(pred1, ts_test$good_scores_8)
+```
+0 - under mean 1 - over mean
+0 less than average cases predicted incorrectly
+6 above average cases predicted incorrectly
+12 less than average cases predicted correctly
+6 above average cases predicted correctly
+
+6 error cases
+6 / 20 = 0.30 total error rate %
+Accuracy rate: 70%
+```{r}
+# Create column in ts_test for accuracy
+ts_test$Predicted <- pred
+Accuracy8 <- c()
+Accuracy8 <- ifelse(ts_test$good_scores_8 == ts_test$Predicted, 0, 1)
+ts_test$Accuracy8 <- Accuracy8
+```
+
+```{r}
+# Create scatter plot with results of model
+g2 <- ggplot(ts_test, aes(x = avg_8th_Test_Score, y = avg_exp_per_student))
+g2 <- g2 + geom_point(aes(size = Accuracy8, color = good_scores_8, shape = pred))
+g2
+```
+
+```{r}
+# Create categorial variable of above average test scores for 4th grade with South regional information
+tms4 <- mean(SRegionDF$avg_4th_Test_Score)
+SRegionDF$good_scores_4 <- cut(SRegionDF$avg_4th_Test_Score, breaks = c(-Inf, tms4, Inf),
+                                                    labels = c("0", "1"))
+```
+
+```{r}
+# Create categorical variable of above average test scores for 8th grade
+tms8 <- mean(SRegionDF$avg_8th_Test_Score)
+SRegionDF$good_scores_8 <- cut(SRegionDF$avg_8th_Test_Score, breaks = c(-Inf, tms8, Inf),
+                                                    labels = c("0", "1"))
+```
+
+```{r}
+# Create train and test data sets
+set.seed(1)
+nrows <- nrow(SRegionDF) # number of rows in the data
+sample_size <- round(0.6*nrows) # take 60%
+
+training_index <- sample(1:nrows, size = sample_size, replace = FALSE) # random index
+
+ts_train <- SRegionDF[training_index, ] # train data set
+ts_test <- SRegionDF[-training_index, ] # test data set
+```
+
+```{r}
+# Train model with the kernlab package
+library(kernlab)
+model <- ksvm(good_scores_4 ~ avg_Instruction_Expenditure_Per_Student + avg_Support_Service_Expenditure_Per_Student + Percent_State + Percent_Local + Region, data = ts_train,
+                    kernel = "rbfdot",
+                    kpar = "automatic",
+                    prob.model = TRUE)
+
+model
+```
+
+```{r}
+# Make prediction table
+pred <- predict(model, ts_test)
+table(pred, ts_test$good_scores_4)
+```
+
+Not enough data to make prediction on regional data.
